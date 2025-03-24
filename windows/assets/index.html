@@ -9,25 +9,43 @@
 <!--twilio native js library-->
 <script type="text/javascript" src="./twilio.min.js"></script>
 <script>
-// Immediate test logging
-console.log('HTML file loaded, setting up logging...');
-
 // Keep track of microphone access to avoid duplicate permission requests
 window.hasRequestedMicrophoneAccess = false;
 window.hasMicrophoneAccess = false;
 
+// Audio management - used for cleanup
+window.activeStreams = [];
+
+// Clean up helper to ensure all audio resources are released
+window.cleanupAudioResources = function() {
+  if (window.activeStreams && window.activeStreams.length > 0) {
+    window.activeStreams.forEach(stream => {
+      if (stream && stream.getTracks) {
+        stream.getTracks().forEach(track => {
+          if (track && track.stop) {
+            track.stop();
+          }
+        });
+      }
+    });
+    window.activeStreams = [];
+  }
+};
+
 // Pre-request microphone access once to avoid duplicate popups
 navigator.mediaDevices.getUserMedia({ audio: true })
   .then(stream => {
-    console.log('Got initial microphone access');
     window.hasMicrophoneAccess = true;
     window.hasRequestedMicrophoneAccess = true;
     
+    // Add stream to active streams for later cleanup
+    window.activeStreams.push(stream);
+    
     // Stop all tracks to release the microphone
     stream.getTracks().forEach(track => track.stop());
+    window.activeStreams = [];
   })
   .catch(error => {
-    console.error('Failed to get initial microphone access:', error);
     window.hasRequestedMicrophoneAccess = true;
   });
 
@@ -85,22 +103,14 @@ console.debug = (...args) => {
   }));
 };
 
-// Test logging after setup
-console.log('Console logging setup complete');
-
 // Log when Twilio SDK is loaded
 window.addEventListener('load', () => {
-  console.log('Window load event fired');
   if (typeof Twilio === 'undefined') {
     console.error('Twilio SDK not loaded');
   } else {
     console.log('Twilio SDK loaded successfully');
     window.TwilioInstance = Twilio;
     window.device = null;
-    
-    // Log Twilio version and capabilities
-    console.log('Twilio SDK Version:', Twilio.VERSION);
-    console.log('Twilio SDK Capabilities:', Twilio.Capabilities);
     
     window.chrome.webview.postMessage(JSON.stringify({
       type: 'sdk_ready',
@@ -158,8 +168,6 @@ function setupDeviceHandlers(device) {
     return;
   }
 
-  console.log('Setting up device event handlers');
-
   device.on('ready', () => {
     console.log('Device is ready');
     logDeviceState(device);
@@ -167,13 +175,13 @@ function setupDeviceHandlers(device) {
 
   device.on('error', (error) => {
     console.error('Device error:', error);
+    window.cleanupAudioResources();
   });
 
   device.on('connect', (connection) => {
     console.log('New connection established');
     logConnectionState(connection);
     
-    // Setup connection event handlers
     connection.on('accept', () => {
       console.log('Connection accepted');
       logConnectionState(connection);
@@ -182,55 +190,35 @@ function setupDeviceHandlers(device) {
     connection.on('disconnect', () => {
       console.log('Connection disconnected');
       logConnectionState(connection);
+      
+      // Clean up audio resources after disconnect
+      setTimeout(() => {
+        window.cleanupAudioResources();
+      }, 500);
     });
 
     connection.on('error', (error) => {
       console.error('Connection error:', error);
+      window.cleanupAudioResources();
     });
 
     connection.on('cancel', () => {
       console.log('Connection cancelled');
       logConnectionState(connection);
+      window.cleanupAudioResources();
     });
 
     connection.on('reject', () => {
       console.log('Connection rejected');
       logConnectionState(connection);
-    });
-
-    connection.on('mute', (muted) => {
-      console.log('Connection muted:', muted);
-      logConnectionState(connection);
-    });
-
-    connection.on('volume', (volume) => {
-      console.log('Connection volume:', volume);
+      window.cleanupAudioResources();
     });
   });
 
   device.on('disconnect', (connection) => {
     console.log('Connection disconnected from device');
     logConnectionState(connection);
-  });
-
-  device.on('incoming', (connection) => {
-    console.log('Incoming connection');
-    logConnectionState(connection);
-  });
-
-  device.on('offline', () => {
-    console.log('Device is offline');
-    logDeviceState(device);
-  });
-
-  device.on('registered', () => {
-    console.log('Device registered');
-    logDeviceState(device);
-  });
-
-  device.on('unregistered', () => {
-    console.log('Device unregistered');
-    logDeviceState(device);
+    window.cleanupAudioResources();
   });
 }
 
@@ -238,7 +226,6 @@ function setupDeviceHandlers(device) {
 const originalSetup = Twilio.Device.setup;
 Twilio.Device.setup = function(token, options) {
   console.log('Setting up Twilio Device with token:', token);
-  console.log('Setup options:', options);
   
   const device = originalSetup.call(this, token, options);
   setupDeviceHandlers(device);
@@ -246,7 +233,7 @@ Twilio.Device.setup = function(token, options) {
   return device;
 };
 
-// Override getUserMedia to prevent duplicate permission requests
+// Override getUserMedia to track active streams for proper cleanup
 const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
 navigator.mediaDevices.getUserMedia = function(constraints) {
   if (constraints.audio && window.hasRequestedMicrophoneAccess) {
@@ -259,6 +246,8 @@ navigator.mediaDevices.getUserMedia = function(constraints) {
   return originalGetUserMedia.call(this, constraints)
     .then(stream => {
       window.hasMicrophoneAccess = true;
+      // Keep track of this stream for later cleanup
+      window.activeStreams.push(stream);
       return stream;
     })
     .catch(error => {
@@ -266,6 +255,11 @@ navigator.mediaDevices.getUserMedia = function(constraints) {
       throw error;
     });
 };
+
+// Add a window unload handler to clean up resources
+window.addEventListener('beforeunload', () => {
+  window.cleanupAudioResources();
+});
 </script>
 </body>
 </html>

@@ -809,22 +809,51 @@ void TwilioVoicePlugin::HandleMethodCall(
         });
   }
   else if (method == "hangUp") {
-    if (!activeCall_) {
-      result->Success(true);
-      return;
-    }
-
+    TV_LOG_DEBUG("Executing hangUp command");
+    
     auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
         std::move(result));
 
-    std::wstring disconnect_script = L"Twilio.Device.activeConnection().disconnect()";
+    // Simplified script that focuses on properly ending the call and cleaning up audio resources
+    std::wstring disconnect_script = L"(() => { \n"
+      L"  try { \n"
+      L"    if (!window.device) { \n"
+      L"      return 'No active device'; \n"
+      L"    } \n"
+      L"    \n"
+      L"    // Disconnect active connection \n"
+      L"    const activeConnection = window.device.activeConnection(); \n"
+      L"    if (activeConnection) { \n"
+      L"      activeConnection.disconnect(); \n"
+      L"    } \n"
+      L"    \n"
+      L"    // Force audio to stop - this is the key to fixing the issue \n"
+      L"    if (window.device.audio && window.device.audio.disconnect) { \n"
+      L"      window.device.audio.disconnect(); \n"
+      L"    } \n"
+      L"    \n"
+      L"    // Clean up any tracked audio resources \n"
+      L"    if (typeof window.cleanupAudioResources === 'function') { \n"
+      L"      window.cleanupAudioResources(); \n"
+      L"    } \n"
+      L"    \n"
+      L"    return ''; \n"
+      L"  } catch (error) { \n"
+      L"    return error.message; \n"
+      L"  } \n"
+      L"})()";
+    
     webview_->evaluateJavaScript(
         disconnect_script,
         [shared_result, this](void*, std::string error) {
+            // Always reset the activeCall_ pointer
+            activeCall_.reset();
+            
             if (!error.empty()) {
-                (*shared_result)->Error("Hangup Failed", error);
+                TV_LOG_ERROR("Hangup error: " + error);
+                (*shared_result)->Error("HANGUP_FAILED", "Failed to hang up call: " + error);
             } else {
-                activeCall_.reset();
+                TV_LOG_INFO("Call successfully disconnected");
                 (*shared_result)->Success(true);
             }
         });
