@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+    <title>Twilio Voice</title>
+</head>
+<body>
+<!--twilio native js library-->
+<script type="text/javascript" src="./twilio.min.js"></script>
+<script>
+// Immediate test logging
+console.log('HTML file loaded, setting up logging...');
+
+// Redirect console logs to postMessage
+const originalConsole = {
+  log: console.log,
+  error: console.error,
+  warn: console.warn,
+  info: console.info,
+  debug: console.debug
+};
+
+console.log = (...args) => {
+  originalConsole.log.apply(console, args);
+  window.chrome.webview.postMessage(JSON.stringify({
+    type: 'log',
+    level: 'debug',
+    message: args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')
+  }));
+};
+
+console.error = (...args) => {
+  originalConsole.error.apply(console, args);
+  window.chrome.webview.postMessage(JSON.stringify({
+    type: 'log',
+    level: 'error',
+    message: args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')
+  }));
+};
+
+console.warn = (...args) => {
+  originalConsole.warn.apply(console, args);
+  window.chrome.webview.postMessage(JSON.stringify({
+    type: 'log',
+    level: 'info',
+    message: args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')
+  }));
+};
+
+console.info = (...args) => {
+  originalConsole.info.apply(console, args);
+  window.chrome.webview.postMessage(JSON.stringify({
+    type: 'log',
+    level: 'info',
+    message: args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')
+  }));
+};
+
+console.debug = (...args) => {
+  originalConsole.debug.apply(console, args);
+  window.chrome.webview.postMessage(JSON.stringify({
+    type: 'log',
+    level: 'debug',
+    message: args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')
+  }));
+};
+
+// Test logging after setup
+console.log('Console logging setup complete');
+
+// Log when Twilio SDK is loaded
+window.addEventListener('load', () => {
+  console.log('Window load event fired');
+  if (typeof Twilio === 'undefined') {
+    console.error('Twilio SDK not loaded');
+  } else {
+    console.log('Twilio SDK loaded successfully');
+    window.TwilioInstance = Twilio;
+    window.device = null;
+    
+    // Log Twilio version and capabilities
+    console.log('Twilio SDK Version:', Twilio.VERSION);
+    console.log('Twilio SDK Capabilities:', Twilio.Capabilities);
+    
+    window.chrome.webview.postMessage(JSON.stringify({
+      type: 'sdk_ready',
+      message: 'Twilio SDK is ready for use'
+    }));
+  }
+});
+
+// Function to log device state
+function logDeviceState(device) {
+  if (!device) {
+    console.error('Device is null');
+    return;
+  }
+  
+  console.log('Device State:', {
+    state: device.state,
+    ready: device.ready,
+    registered: device.registered,
+    token: device.token,
+    capabilities: device.capabilities,
+    connections: device.connections,
+    audio: device.audio,
+    codec: device.codec,
+    maxCallSignals: device.maxCallSignals,
+    maxCallSignalsPerSecond: device.maxCallSignalsPerSecond
+  });
+}
+
+// Function to log connection state
+function logConnectionState(connection) {
+  if (!connection) {
+    console.error('Connection is null');
+    return;
+  }
+  
+  console.log('Connection State:', {
+    state: connection.state,
+    status: connection.status,
+    parameters: connection.parameters,
+    callSid: connection.callSid,
+    from: connection.from,
+    to: connection.to,
+    muted: connection.muted,
+    direction: connection.direction,
+    timestamp: connection.timestamp,
+    customParameters: connection.customParameters
+  });
+}
+
+// Function to setup device event handlers
+function setupDeviceHandlers(device) {
+  if (!device) {
+    console.error('Cannot setup handlers for null device');
+    return;
+  }
+
+  console.log('Setting up device event handlers');
+
+  device.on('ready', () => {
+    console.log('Device is ready');
+    logDeviceState(device);
+  });
+
+  device.on('error', (error) => {
+    console.error('Device error:', error);
+  });
+
+  device.on('connect', (connection) => {
+    console.log('New connection established');
+    logConnectionState(connection);
+    
+    // Setup connection event handlers
+    connection.on('accept', () => {
+      console.log('Connection accepted');
+      logConnectionState(connection);
+    });
+
+    connection.on('disconnect', () => {
+      console.log('Connection disconnected');
+      logConnectionState(connection);
+    });
+
+    connection.on('error', (error) => {
+      console.error('Connection error:', error);
+    });
+
+    connection.on('cancel', () => {
+      console.log('Connection cancelled');
+      logConnectionState(connection);
+    });
+
+    connection.on('reject', () => {
+      console.log('Connection rejected');
+      logConnectionState(connection);
+    });
+
+    connection.on('mute', (muted) => {
+      console.log('Connection muted:', muted);
+      logConnectionState(connection);
+    });
+
+    connection.on('volume', (volume) => {
+      console.log('Connection volume:', volume);
+    });
+  });
+
+  device.on('disconnect', (connection) => {
+    console.log('Connection disconnected from device');
+    logConnectionState(connection);
+  });
+
+  device.on('incoming', (connection) => {
+    console.log('Incoming connection');
+    logConnectionState(connection);
+  });
+
+  device.on('offline', () => {
+    console.log('Device is offline');
+    logDeviceState(device);
+  });
+
+  device.on('registered', () => {
+    console.log('Device registered');
+    logDeviceState(device);
+  });
+
+  device.on('unregistered', () => {
+    console.log('Device unregistered');
+    logDeviceState(device);
+  });
+}
+
+// Override the device setup to add logging
+const originalSetup = Twilio.Device.setup;
+Twilio.Device.setup = function(token, options) {
+  console.log('Setting up Twilio Device with token:', token);
+  console.log('Setup options:', options);
+  
+  const device = originalSetup.call(this, token, options);
+  setupDeviceHandlers(device);
+  
+  return device;
+};
+</script>
+</body>
+</html>
