@@ -12,6 +12,25 @@
 // Immediate test logging
 console.log('HTML file loaded, setting up logging...');
 
+// Keep track of microphone access to avoid duplicate permission requests
+window.hasRequestedMicrophoneAccess = false;
+window.hasMicrophoneAccess = false;
+
+// Pre-request microphone access once to avoid duplicate popups
+navigator.mediaDevices.getUserMedia({ audio: true })
+  .then(stream => {
+    console.log('Got initial microphone access');
+    window.hasMicrophoneAccess = true;
+    window.hasRequestedMicrophoneAccess = true;
+    
+    // Stop all tracks to release the microphone
+    stream.getTracks().forEach(track => track.stop());
+  })
+  .catch(error => {
+    console.error('Failed to get initial microphone access:', error);
+    window.hasRequestedMicrophoneAccess = true;
+  });
+
 // Redirect console logs to postMessage
 const originalConsole = {
   log: console.log,
@@ -225,6 +244,27 @@ Twilio.Device.setup = function(token, options) {
   setupDeviceHandlers(device);
   
   return device;
+};
+
+// Override getUserMedia to prevent duplicate permission requests
+const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
+navigator.mediaDevices.getUserMedia = function(constraints) {
+  if (constraints.audio && window.hasRequestedMicrophoneAccess) {
+    console.log('Reusing existing microphone permission');
+    if (!window.hasMicrophoneAccess) {
+      return Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+    }
+  }
+  window.hasRequestedMicrophoneAccess = true;
+  return originalGetUserMedia.call(this, constraints)
+    .then(stream => {
+      window.hasMicrophoneAccess = true;
+      return stream;
+    })
+    .catch(error => {
+      console.error('getUserMedia error:', error);
+      throw error;
+    });
 };
 </script>
 </body>

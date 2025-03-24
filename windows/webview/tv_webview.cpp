@@ -7,6 +7,9 @@ TVWebView::TVWebView(HWND parentWindow) : parentWindow_(parentWindow) {
 void TVWebView::initialize(std::function<void()> completionHandler) {
     auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
     
+    // Add browser command line options to help with permission handling
+    options->put_AdditionalBrowserArguments(L"--use-fake-ui-for-media-stream");
+    
     CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, options.Get(),
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [this, completionHandler](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
@@ -20,6 +23,26 @@ void TVWebView::initialize(std::function<void()> completionHandler) {
                             webview_->get_Settings(&settings_);
                             settings_->put_IsScriptEnabled(TRUE);
                             settings_->put_AreDefaultScriptDialogsEnabled(TRUE);
+                            
+                            // Add permission request handler to handle microphone permissions properly
+                            webview_->add_PermissionRequested(
+                                Microsoft::WRL::Callback<ICoreWebView2PermissionRequestedEventHandler>(
+                                    [this](ICoreWebView2* sender, ICoreWebView2PermissionRequestedEventArgs* args) -> HRESULT {
+                                        COREWEBVIEW2_PERMISSION_KIND kind;
+                                        args->get_PermissionKind(&kind);
+                                        
+                                        // If this is a microphone permission request
+                                        if (kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE) {
+                                            // Set state to allow and mark the decision as persisted
+                                            // This will prevent showing the dialog a second time
+                                            args->put_State(COREWEBVIEW2_PERMISSION_STATE_ALLOW);
+                                        }
+                                        
+                                        return S_OK;
+                                    }
+                                ).Get(),
+                                nullptr
+                            );
                             
                             completionHandler();
                             return S_OK;
