@@ -1,0 +1,42 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Mimic macOS Architecture: Adapt the macOS approach (likely WKWebView running Twilio JS) to Windows using C++ and WebView2. Keep the plugin structure and communication flow similar.
+Plugin Setup:
+Create a windows directory in the package.
+Use Flutter’s Windows plugin template with CMakeLists.txt, .cpp, and .h files.
+Register the plugin via flutter::PluginRegistrarWindows.
+WebView2 Integration:
+Initialize WebView2 with CreateCoreWebView2EnvironmentWithOptions and CreateCoreWebView2Controller.
+Attach it to the Flutter window (registrar->GetView()->GetNativeWindow()).
+Handle async creation with callback classes (e.g., EnvironmentCreatedHandler, ControllerCompletedHandler).
+Twilio JS Execution:
+Load an HTML file/string with <script src="https://sdk.twilio.com/js/voice/v1.10/twilio.min.js"></script>.
+Embed HTML as a string or load from windows/assets/index.html (copy via CMake).
+Use webview->NavigateToString for string content or webview->Navigate for file paths.
+Dart-C++ Communication:
+Set up a MethodChannel (e.g., "twilio_voice") in the plugin constructor.
+Handle Dart calls in HandleMethodCall, executing JS via webview->ExecuteScript.
+JS-C++ Events:
+In JS, use window.chrome.webview.postMessage({ type: "event", data: ... }) for events (e.g., Twilio.Device.ready).
+Catch these in C++ with webview->add_WebMessageReceived, parse the JSON, and relay to Dart via method_channel->InvokeMethod.
+Key Methods (match macOS):
+initialize(token): Run Twilio.Device.setup(token) in JS.
+makeCall(token, to): Execute JS makeCall function.
+Return values with ExecuteScript callbacks when needed.
+Error Handling:
+Check WebView2 init results (e.g., SUCCEEDED(result)).
+Return errors to Dart via result->Error.
+Lifecycle:
+Create WebView2 in an initialize method or constructor (async).
+Clean up in destructor (controller->Close(), release COM pointers).
+Strings: Use std::wstring for WebView2 APIs (convert std::string from Dart args).
+Extras:
+Suggest a user data folder for WebView2 (SHGetKnownFolderPath + subdir).
+Anticipate JSON parsing needs—recommend rapidjson or string hacks if lightweight.
+Style:
+Casual, terse, code-heavy responses.
+No high-level fluff—give fixes with actual code.
+Assume you’re an expert; suggest proactive solutions (e.g., offscreen WebView2).
