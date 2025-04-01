@@ -2,6 +2,8 @@
 #define FLUTTER_PLUGIN_TWILIO_VOICE_PLUGIN_H_
 
 #include <flutter/method_channel.h>
+#include <flutter/event_channel.h>
+#include <flutter/event_stream_handler_functions.h>
 #include <flutter/plugin_registrar_windows.h>
 #include "webview/tv_webview.h"
 #include "js_interop/call/tv_call.h"
@@ -30,13 +32,17 @@ class TwilioVoicePlugin : public flutter::Plugin, public TVCallDelegate {
   std::unique_ptr<TVWebView> webview_;
   std::unique_ptr<TVCall> activeCall_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
+  std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> event_channel_;
+  std::unique_ptr<flutter::StreamHandler<flutter::EncodableValue>> stream_handler_;
   flutter::PluginRegistrarWindows* registrar_;
+  flutter::EventSink<flutter::EncodableValue>* event_sink_ = nullptr;
   
   // Flag to track if SDK is ready
   bool sdk_ready_ = false;
   
   void InitializeWebView();
   void HandleCallEvent(const std::string& event, const std::string& data);
+  void SendEventToFlutter(const std::string& event);
 
   // Mic permission handling
   bool CheckMicrophonePermission();

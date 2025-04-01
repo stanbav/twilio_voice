@@ -36,6 +36,37 @@ TwilioVoicePlugin::TwilioVoicePlugin(flutter::PluginRegistrarWindows* registrar)
       registrar->messenger(), "twilio_voice/messages",
       &flutter::StandardMethodCodec::GetInstance());
 
+  // Initialize event channel
+  event_channel_ = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
+      registrar->messenger(), "twilio_voice/events",
+      &flutter::StandardMethodCodec::GetInstance());
+
+  // Set up stream handler
+  auto handler = std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
+    [this](const flutter::EncodableValue* arguments,
+           std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& events) -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
+      TV_LOG_DEBUG("Event stream handler: onListen called");
+      event_sink_ = events.release();
+      if (event_sink_) {
+        TV_LOG_DEBUG("Event sink successfully set up");
+      } else {
+        TV_LOG_ERROR("Failed to set up event sink");
+      }
+      return nullptr;
+    },
+    [this](const flutter::EncodableValue* arguments) -> std::unique_ptr<flutter::StreamHandlerError<flutter::EncodableValue>> {
+      TV_LOG_DEBUG("Event stream handler: onCancel called");
+      if (event_sink_) {
+        delete event_sink_;
+        event_sink_ = nullptr;
+        TV_LOG_DEBUG("Event sink successfully cleaned up");
+      }
+      return nullptr;
+    }
+  );
+  stream_handler_ = std::move(handler);
+  event_channel_->SetStreamHandler(std::move(stream_handler_));
+
   // Initialize logger with method channel
   TVLogger::getInstance().setMethodChannel(channel_.get());
   TV_LOG_INFO("TwilioVoicePlugin initialized");
@@ -155,6 +186,65 @@ void TwilioVoicePlugin::InitializeWebView() {
         L"      level: 'debug',"
         L"      message: 'Twilio SDK loaded successfully'"
         L"    }));"
+        L"    "
+        L"    // Clean up any existing event listeners first"
+        L"    if (window.device) {"
+        L"      window.device.removeAllListeners('incoming');"
+        L"      window.device.removeAllListeners('connect');"
+        L"      window.device.removeAllListeners('disconnect');"
+        L"      window.device.removeAllListeners('error');"
+        L"      window.device.removeAllListeners('offline');"
+        L"      window.device.removeAllListeners('ready');"
+        L"    }"
+        L"    "
+        L"    // Set up event listeners for Twilio.Device"
+        L"    window.device.on('incoming', (connection) => {"
+        L"      window.chrome.webview.postMessage(JSON.stringify({"
+        L"        type: 'call_event',"
+        L"        event: 'incoming',"
+        L"        from: connection.parameters.From,"
+        L"        to: connection.parameters.To"
+        L"      }));"
+        L"    });"
+        L"    "
+        L"    window.device.on('connect', (connection) => {"
+        L"      window.chrome.webview.postMessage(JSON.stringify({"
+        L"        type: 'call_event',"
+        L"        event: 'connected',"
+        L"        from: connection.parameters.From,"
+        L"        to: connection.parameters.To"
+        L"      }));"
+        L"    });"
+        L"    "
+        L"    window.device.on('disconnect', (connection) => {"
+        L"      window.chrome.webview.postMessage(JSON.stringify({"
+        L"        type: 'call_event',"
+        L"        event: 'disconnected'"
+        L"      }));"
+        L"    });"
+        L"    "
+        L"    window.device.on('error', (error) => {"
+        L"      window.chrome.webview.postMessage(JSON.stringify({"
+        L"        type: 'call_event',"
+        L"        event: 'error',"
+        L"        error: error.message"
+        L"      }));"
+        L"    });"
+        L"    "
+        L"    window.device.on('offline', () => {"
+        L"      window.chrome.webview.postMessage(JSON.stringify({"
+        L"        type: 'call_event',"
+        L"        event: 'offline'"
+        L"      }));"
+        L"    });"
+        L"    "
+        L"    window.device.on('ready', () => {"
+        L"      window.chrome.webview.postMessage(JSON.stringify({"
+        L"        type: 'call_event',"
+        L"        event: 'ready'"
+        L"      }));"
+        L"    });"
+        L"    "
         L"    return true;"
         L"  } catch (error) {"
         L"    window.chrome.webview.postMessage(JSON.stringify({"
@@ -182,63 +272,82 @@ void TwilioVoicePlugin::InitializeWebView() {
             LPWSTR message;
             args->get_WebMessageAsJson(&message);
             if (message) {
-              TV_LOG_DEBUG("Received message from WebView");
-              // Convert wide string to UTF-8 for logging
+              // Convert wide string to UTF-8
               int utf8Length = WideCharToMultiByte(CP_UTF8, 0, message, -1, nullptr, 0, nullptr, nullptr);
               if (utf8Length > 0) {
                 std::string utf8Message;
                 utf8Message.resize(utf8Length - 1);
                 WideCharToMultiByte(CP_UTF8, 0, message, -1, &utf8Message[0], utf8Length, nullptr, nullptr);
+                TV_LOG_DEBUG("Processing WebView message: " + utf8Message);
                 
-                TV_LOG_DEBUG("Raw message from WebView: " + utf8Message);
-                
-                // Parse the JSON message
                 try {
-                  auto json = nlohmann::json::parse(utf8Message);
-                  if (json.contains("type")) {
-                    std::string type = json["type"];
-                    TV_LOG_DEBUG("Processing message of type: " + type);
-                    
-                    if (type == "log") {
-                      std::string level = json["level"];
-                      std::string msg = json["message"];
-                      TV_LOG_DEBUG("Processing log message - Level: " + level + ", Message: " + msg);
-                      if (level == "error") {
-                        TV_LOG_ERROR("JS: " + msg);
-                      } else if (level == "info") {
-                        TV_LOG_INFO("JS: " + msg);
-                      } else {
-                        TV_LOG_DEBUG("JS: " + msg);
-                      }
-                    } else if (type == "sdk_ready") {
-                      TV_LOG_INFO("Twilio SDK is ready for use");
-                      sdk_ready_ = true;
-                    } else if (type == "device_state") {
-                      TV_LOG_DEBUG("Device state update: " + json.dump());
-                    } else if (type == "connection_state") {
-                      TV_LOG_DEBUG("Connection state update: " + json.dump());
-                    } else if (type == "call_event") {
-                      TV_LOG_DEBUG("Call event: " + json.dump());
-                    } else {
-                      TV_LOG_DEBUG("Unknown message type: " + type);
-                      TV_LOG_DEBUG("Full message: " + json.dump());
-                    }
-                  } else {
-                    TV_LOG_DEBUG("Message without type: " + json.dump());
+                  // Remove any BOM or invalid characters at the start
+                  size_t jsonStart = utf8Message.find_first_of('{');
+                  if (jsonStart != std::string::npos) {
+                    utf8Message = utf8Message.substr(jsonStart);
                   }
+                  
+                  // Remove any trailing garbage
+                  size_t jsonEnd = utf8Message.find_last_of('}');
+                  if (jsonEnd != std::string::npos) {
+                    utf8Message = utf8Message.substr(0, jsonEnd + 1);
+                  }
+                  
+                  // Remove escaped quotes
+                  std::string unescapedJson = utf8Message;
+                  size_t pos = 0;
+                  while ((pos = unescapedJson.find("\\\"", pos)) != std::string::npos) {
+                    unescapedJson.replace(pos, 2, "\"");
+                    pos += 1;
+                  }
+                  
+                  TV_LOG_DEBUG("Unescaped JSON message: " + unescapedJson);
+                  auto json = nlohmann::json::parse(unescapedJson);
+                  TV_LOG_DEBUG("Successfully parsed JSON");
+                  
+                  if (json.contains("type")) {
+                    std::string typeValue = json["type"].get<std::string>();
+                    TV_LOG_DEBUG("Found 'type' field with value: " + typeValue);
+                    
+                    if (typeValue == "call_event" && json.contains("event")) {
+                      std::string eventValue = json["event"].get<std::string>();
+                      TV_LOG_DEBUG("Processing call event: " + eventValue);
+
+                      // Handle special cases
+                      if (eventValue == "incoming") {
+                        std::string from = json.value("from", "");
+                        std::string to = json.value("to", "");
+                        SendEventToFlutter("Incoming|" + from + "|" + to + "|Incoming");
+                      } else if (eventValue == "connected") {
+                        std::string from = json.value("from", "");
+                        std::string to = json.value("to", "");
+                        SendEventToFlutter("Connected|" + from + "|" + to + "|Outgoing");
+                      } else if (eventValue == "accept") {
+                        std::string from = json.value("from", "");
+                        std::string to = json.value("to", "");
+                        SendEventToFlutter("Answer|" + from + "|" + to);
+                      } else if (eventValue == "disconnected") {
+                        SendEventToFlutter("Call Ended");
+                      } else if (eventValue == "error") {
+                        std::string error = json.value("error", "Unknown error");
+                        SendEventToFlutter("Error|" + error);
+                      } else {
+                        // For all other events, just send the capitalized name
+                        std::string eventName = eventValue;
+                        if (!eventName.empty()) {
+                          eventName[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(eventName[0])));
+                        }
+                        SendEventToFlutter(eventName);
+                      }
+                    }
+                  }
+                } catch (const nlohmann::json::parse_error& e) {
+                  TV_LOG_ERROR("JSON parse error: " + std::string(e.what()));
                 } catch (const std::exception& e) {
-                  TV_LOG_ERROR("Failed to parse JSON message: " + std::string(e.what()));
-                  TV_LOG_DEBUG("Raw message: " + utf8Message);
-                } catch (...) {
-                  TV_LOG_ERROR("Unknown error parsing JSON message");
-                  TV_LOG_DEBUG("Raw message: " + utf8Message);
+                  TV_LOG_ERROR("Failed to process message: " + std::string(e.what()));
                 }
-              } else {
-                TV_LOG_ERROR("Failed to convert message to UTF-8");
               }
               CoTaskMemFree(message);
-            } else {
-              TV_LOG_ERROR("Received null message from WebView");
             }
             return S_OK;
           }).Get(),
@@ -331,6 +440,9 @@ void TwilioVoicePlugin::HandleMethodCall(
       L"  if (typeof Twilio === 'undefined') {"
       L"    throw new Error('Twilio SDK not loaded');"
       L"  }"
+      L"  if (typeof Twilio.Device === 'undefined') {"
+      L"    throw new Error('Twilio.Device not available');"
+      L"  }"
       L"  window.chrome.webview.postMessage(JSON.stringify({"
       L"    type: 'log',"
       L"    level: 'debug',"
@@ -370,7 +482,10 @@ void TwilioVoicePlugin::HandleMethodCall(
               L"  if (typeof Twilio.Device === 'undefined') {"
               L"    throw new Error('Twilio.Device not available');"
               L"  }"
-              L"  window.device = Twilio.Device.setup('" + wtoken + L"');"
+              L"  window.device = Twilio.Device('" + wtoken + L"');"
+              L"  if (!window.device) {"
+              L"    throw new Error('Device setup failed - device is null');"
+              L"  }"
               L"  window.device.on('ready', () => {"
               L"    window.chrome.webview.postMessage(JSON.stringify({"
               L"      type: 'log',"
@@ -466,9 +581,8 @@ void TwilioVoicePlugin::HandleMethodCall(
     std::wstring js_code = L"(() => {"
       L"try {"
       L"  window.chrome.webview.postMessage(JSON.stringify({"
-      L"    type: 'log',"
-      L"    level: 'debug',"
-      L"    message: 'Starting makeCall'"
+      L"    type: 'call_event',"
+      L"    event: 'ringing'"
       L"  }));"
       L"  if (typeof Twilio === 'undefined') {"
       L"    throw new Error('Twilio SDK not loaded - please wait for initialization');"
@@ -476,67 +590,41 @@ void TwilioVoicePlugin::HandleMethodCall(
       L"  if (!window.device) {"
       L"    throw new Error('Twilio Device not initialized - please call tokens() first');"
       L"  }"
-      L"  window.chrome.webview.postMessage(JSON.stringify({"
-      L"    type: 'log',"
-      L"    level: 'debug',"
-      L"    message: 'Device state: ' + JSON.stringify({"
-      L"      state: window.device.state,"
-      L"      ready: window.device.ready,"
-      L"      registered: window.device.registered,"
-      L"      token: window.device.token,"
-      L"      capabilities: window.device.capabilities,"
-      L"      connections: window.device.connections"
-      L"    })"
-      L"  }));"
       L"  const params = {"
       L"    To: '" + wto + L"',"
       L"    From: '" + wfrom + L"'"
       L"  };"
-      L"  window.chrome.webview.postMessage(JSON.stringify({"
-      L"    type: 'log',"
-      L"    level: 'debug',"
-      L"    message: 'Creating connection with params: ' + JSON.stringify(params)"
-      L"  }));"
       L"  const connection = window.device.connect(params);"
       L"  if (!connection) {"
       L"    throw new Error('Failed to create connection - connection is null');"
       L"  }"
-      L"  window.chrome.webview.postMessage(JSON.stringify({"
-      L"    type: 'log',"
-      L"    level: 'debug',"
-      L"    message: 'Connection created: ' + JSON.stringify({"
-      L"      state: connection.state,"
-      L"      parameters: connection.parameters,"
-      L"      status: connection.status"
-      L"    })"
-      L"  }));"
       L"  connection.on('accept', () => {"
       L"    window.chrome.webview.postMessage(JSON.stringify({"
-      L"      type: 'log',"
-      L"      level: 'info',"
-      L"      message: 'Call accepted'"
+      L"      type: 'call_event',"
+      L"      event: 'accept'"
       L"    }));"
       L"  });"
       L"  connection.on('disconnect', () => {"
       L"    window.chrome.webview.postMessage(JSON.stringify({"
-      L"      type: 'log',"
-      L"      level: 'info',"
-      L"      message: 'Call disconnected'"
+      L"      type: 'call_event',"
+      L"      event: 'disconnected'"
       L"    }));"
       L"  });"
       L"  connection.on('error', (error) => {"
       L"    window.chrome.webview.postMessage(JSON.stringify({"
-      L"      type: 'log',"
-      L"      level: 'error',"
-      L"      message: 'Call error: ' + JSON.stringify(error)"
+      L"      type: 'call_event',"
+      L"      event: 'error',"
+      L"      error: error.message"
       L"    }));"
       L"  });"
+      L"  return '';"
       L"} catch (error) {"
       L"  window.chrome.webview.postMessage(JSON.stringify({"
-      L"    type: 'log',"
-      L"    level: 'error',"
-      L"    message: 'Error making call: ' + error.message + '\\nStack: ' + error.stack"
+      L"    type: 'call_event',"
+      L"    event: 'error',"
+      L"    error: error.message"
       L"  }));"
+      L"  throw error;"
       L"}"
       L"})()";
 
@@ -814,7 +902,6 @@ void TwilioVoicePlugin::HandleMethodCall(
     auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
         std::move(result));
 
-    // Simplified script that focuses on properly ending the call and cleaning up audio resources
     std::wstring disconnect_script = L"(() => { \n"
       L"  try { \n"
       L"    if (!window.device) { \n"
@@ -827,7 +914,15 @@ void TwilioVoicePlugin::HandleMethodCall(
       L"      activeConnection.disconnect(); \n"
       L"    } \n"
       L"    \n"
-      L"    // Force audio to stop - this is the key to fixing the issue \n"
+      L"    // Clean up event listeners \n"
+      L"    window.device.removeAllListeners('incoming'); \n"
+      L"    window.device.removeAllListeners('connect'); \n"
+      L"    window.device.removeAllListeners('disconnect'); \n"
+      L"    window.device.removeAllListeners('error'); \n"
+      L"    window.device.removeAllListeners('offline'); \n"
+      L"    window.device.removeAllListeners('ready'); \n"
+      L"    \n"
+      L"    // Force audio to stop \n"
       L"    if (window.device.audio && window.device.audio.disconnect) { \n"
       L"      window.device.audio.disconnect(); \n"
       L"    } \n"
@@ -992,56 +1087,63 @@ void TwilioVoicePlugin::HandleMethodCall(
   }
 }
 
+void TwilioVoicePlugin::SendEventToFlutter(const std::string& event) {
+  if (!event_sink_) {
+    TV_LOG_ERROR("Cannot send event to Flutter: event_sink_ is null, Event: " + event);
+    return;
+  }
+
+  TV_LOG_DEBUG("Attempting to send event to Flutter: " + event);
+  try {
+    event_sink_->Success(flutter::EncodableValue(event));
+    TV_LOG_DEBUG("Successfully sent event to Flutter: " + event);
+  } catch (const std::exception& e) {
+    TV_LOG_ERROR("Failed to send event to Flutter: " + std::string(e.what()) + ", Event: " + event);
+  }
+}
+
 // TVCallDelegate implementations
 void TwilioVoicePlugin::onCallAccept(TVCall* call) {
-  channel_->InvokeMethod("onCallEvent", 
-      std::make_unique<flutter::EncodableValue>("accept"));
+  SendEventToFlutter("Accept");
 }
 
 void TwilioVoicePlugin::onCallCancel(TVCall* call) {
-    channel_->InvokeMethod("onCallEvent",
-        std::make_unique<flutter::EncodableValue>("cancel"));
+  SendEventToFlutter("Cancel");
 }
 
 void TwilioVoicePlugin::onCallDisconnect(TVCall* call) {
-    channel_->InvokeMethod("onCallEvent",
-        std::make_unique<flutter::EncodableValue>("disconnect"));
+  SendEventToFlutter("Disconnect");
 }
 
 void TwilioVoicePlugin::onCallError(const TVError& error) {
-    flutter::EncodableMap map;
-    map[flutter::EncodableValue("type")] = flutter::EncodableValue("error");
-    map[flutter::EncodableValue("code")] = flutter::EncodableValue(error.code);
-    map[flutter::EncodableValue("message")] = flutter::EncodableValue(error.message);
-    channel_->InvokeMethod("onCallEvent",
-        std::make_unique<flutter::EncodableValue>(map));
+  json event;
+  event["type"] = "error";
+  event["code"] = error.code;
+  event["message"] = error.message;
+  SendEventToFlutter(event.dump());
 }
 
 void TwilioVoicePlugin::onCallReconnecting(const TVError& error) {
-    flutter::EncodableMap map;
-    map[flutter::EncodableValue("type")] = flutter::EncodableValue("reconnecting");
-    map[flutter::EncodableValue("error")] = flutter::EncodableValue(error.message);
-    channel_->InvokeMethod("onCallEvent",
-        std::make_unique<flutter::EncodableValue>(map));
+  json event;
+  event["type"] = "reconnecting";
+  event["error"] = error.message;
+  SendEventToFlutter(event.dump());
 }
 
 void TwilioVoicePlugin::onCallReconnected() {
-    channel_->InvokeMethod("onCallEvent",
-        std::make_unique<flutter::EncodableValue>("reconnected"));
+  SendEventToFlutter("Reconnected");
 }
 
 void TwilioVoicePlugin::onCallReject() {
-    channel_->InvokeMethod("onCallEvent",
-        std::make_unique<flutter::EncodableValue>("reject"));
+  SendEventToFlutter("Reject");
 }
 
 void TwilioVoicePlugin::onCallStatus(const TVCallStatus& status) {
-    flutter::EncodableMap map;
-    map[flutter::EncodableValue("type")] = flutter::EncodableValue("status");
-    map[flutter::EncodableValue("status")] = flutter::EncodableValue(status.status);
-    map[flutter::EncodableValue("callSid")] = flutter::EncodableValue(status.callSid);
-    channel_->InvokeMethod("onCallEvent",
-        std::make_unique<flutter::EncodableValue>(map));
+  json event;
+  event["type"] = "status";
+  event["status"] = status.status;
+  event["callSid"] = status.callSid;
+  SendEventToFlutter(event.dump());
 }
 
 }  // namespace twilio_voice
