@@ -684,16 +684,17 @@ namespace twilio_voice
           std::move(result));
 
       webview_->evaluateJavaScript(
-          std::wstring(L"window.connection.mute(") + (muted ? L"true" : L"false") + L")",
-          [shared_result](void *, std::string error)
+          std::wstring(L"window.connection.mute(") + (muted ? L"true" : L"false") + L"); window.connection.isMuted()",
+          [shared_result](void *, std::string response)
           {
-            if (error != "null")
+            if (response == "null")
             {
-              (*shared_result)->Error("Mute Failed", error);
+              (*shared_result)->Success(nullptr);
             }
             else
             {
-              (*shared_result)->Success(true);
+              TV_LOG_DEBUG("isMuted response: " + response);
+              (*shared_result)->Success(response == "true");
             }
           });
     }
