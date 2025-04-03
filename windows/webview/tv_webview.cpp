@@ -1,6 +1,8 @@
 #include "tv_webview.h"
 #include <WebView2EnvironmentOptions.h>
 
+#include "../utils/tv_logger.h"
+
 TVWebView::TVWebView(HWND parentWindow) : parentWindow_(parentWindow) {
 }
 
@@ -53,15 +55,43 @@ void TVWebView::initialize(std::function<void()> completionHandler) {
 
 void TVWebView::evaluateJavaScript(const std::wstring& javascript,
                                  std::function<void(void*, std::string)> completionHandler) {
+    // Convert wide string to UTF-8 for logging
+    int length = WideCharToMultiByte(CP_UTF8, 0, javascript.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (length > 0) {
+        std::string utf8Javascript(length, 0);
+        WideCharToMultiByte(CP_UTF8, 0, javascript.c_str(), -1, &utf8Javascript[0], length, nullptr, nullptr);
+        utf8Javascript.pop_back(); // Remove null terminator
+        TV_LOG_DEBUG("Executing JavaScript: " + utf8Javascript);
+    } else {
+        TV_LOG_DEBUG("Executing JavaScript: [conversion failed]");
+    }
+    
     webview_->ExecuteScript(javascript.c_str(),
         Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
             [completionHandler](HRESULT error, LPCWSTR result) -> HRESULT {
                 if (FAILED(error)) {
+                    TV_LOG_DEBUG("JavaScript execution failed with error: " + std::to_string(error));
                     completionHandler(nullptr, "JavaScript execution failed");
                     return error;
                 }
-                // Handle result parsing
-                completionHandler(const_cast<LPWSTR>(result), "");
+
+                // Convert wide string to UTF-8
+                int length = WideCharToMultiByte(CP_UTF8, 0, result, -1, nullptr, 0, nullptr, nullptr);
+                if (length > 0) {
+                    std::string utf8Result(length, 0);
+                    WideCharToMultiByte(CP_UTF8, 0, result, -1, &utf8Result[0], length, nullptr, nullptr);
+                    
+                    // Remove null terminator
+                    utf8Result.pop_back();
+                    
+                    TV_LOG_DEBUG("JavaScript execution result: " + utf8Result);
+                                  char* resultBuffer = new char[utf8Result.length() + 1];
+                        strcpy_s(resultBuffer, utf8Result.length() + 1, utf8Result.c_str());
+                        completionHandler(nullptr, resultBuffer);
+                } else {
+                    TV_LOG_DEBUG("Failed to convert result to UTF-8");
+                    completionHandler(nullptr, "Failed to convert result to UTF-8");
+                }
                 return S_OK;
             }).Get());
 }

@@ -447,7 +447,7 @@ namespace twilio_voice
           check_sdk_script,
           [this, wtoken, shared_result](void *, std::string error)
           {
-            if (!error.empty() || error == "false")
+            if (error == "false")
             {
               TV_LOG_ERROR("Twilio SDK not ready: " + error);
               (*shared_result)->Error("SDK_NOT_READY", "Twilio SDK is not ready yet");
@@ -490,7 +490,7 @@ namespace twilio_voice
                 setup_script,
                 [shared_result](void *, std::string error)
                 {
-                  if (!error.empty())
+                  if (error == "false")
                   {
                     TV_LOG_ERROR("Setup Failed: " + error);
                     (*shared_result)->Error("Setup Failed", error);
@@ -578,61 +578,63 @@ namespace twilio_voice
                              L"  }"
                              L"  const params = {"
                              L"    params: {"
-                             L"      To: '" + wto + L"',"
-                             L"      From: '" + wfrom + L"'"
-                             L"    },"
-                             L"    codecPreferences: ['opus', 'pcmu']"
-                             L"  };"
-                             L"    window.chrome.webview.postMessage({"
-                             L"    type: 'call_event',"
-                             L"    event: 'ringing',"
-                             L"    params: params"
-                             L"    });"
-                             L"  window.connection = await window.device.connect(params);"
-                             L"  if (!window.connection) {"
-                             L"    throw new Error('Failed to create connection - connection is null');"
-                             L"  }"
-                             L"  window.connection.on('accept', () => {"
-                             L"    window.chrome.webview.postMessage({"
-                             L"      type: 'call_event',"
-                             L"      event: 'accept'"
-                             L"    });"
-                             L"  });"
-                             L"  window.connection.on('disconnect', () => {"
-                             L"    window.chrome.webview.postMessage({"
-                             L"      type: 'call_event',"
-                             L"      event: 'disconnected'"
-                             L"    });"
-                             L"  });"
-                             L"  window.connection.on('error', (error) => {"
-                             L"    window.chrome.webview.postMessage({"
-                             L"      type: 'call_event',"
-                             L"      event: 'error',"
-                             L"      error: error.message"
-                             L"    });"
-                             L"  });"
-                             L"  window.connection.on('reject', () => {"
-                             L"    window.chrome.webview.postMessage({"
-                             L"      type: 'call_event',"
-                             L"      event: 'reject'"
-                             L"    });"
-                             L"  });"
-                             L"  window.connection.on('cancel', () => {"
-                             L"    window.chrome.webview.postMessage({"
-                             L"      type: 'call_event',"
-                             L"      event: 'cancel'"
-                             L"    });"
-                             L"  });"
-                             L"  return '';"
-                             L"} catch (error) {"
-                             L"  window.chrome.webview.postMessage({"
-                             L"    type: 'call_event',"
-                             L"    event: 'error',"
-                             L"    error: error.message"
-                             L"  });"
-                             L"  throw error;"
-                             L"}"
-                             L"})()";
+                             L"      To: '" +
+                             wto + L"',"
+                                   L"      From: '" +
+                             wfrom + L"'"
+                                     L"    },"
+                                     L"    codecPreferences: ['opus', 'pcmu']"
+                                     L"  };"
+                                     L"    window.chrome.webview.postMessage({"
+                                     L"    type: 'call_event',"
+                                     L"    event: 'ringing',"
+                                     L"    params: params"
+                                     L"    });"
+                                     L"  window.connection = await window.device.connect(params);"
+                                     L"  if (!window.connection) {"
+                                     L"    throw new Error('Failed to create connection - connection is null');"
+                                     L"  }"
+                                     L"  window.connection.on('accept', () => {"
+                                     L"    window.chrome.webview.postMessage({"
+                                     L"      type: 'call_event',"
+                                     L"      event: 'accept'"
+                                     L"    });"
+                                     L"  });"
+                                     L"  window.connection.on('disconnect', () => {"
+                                     L"    window.chrome.webview.postMessage({"
+                                     L"      type: 'call_event',"
+                                     L"      event: 'disconnected'"
+                                     L"    });"
+                                     L"  });"
+                                     L"  window.connection.on('error', (error) => {"
+                                     L"    window.chrome.webview.postMessage({"
+                                     L"      type: 'call_event',"
+                                     L"      event: 'error',"
+                                     L"      error: error.message"
+                                     L"    });"
+                                     L"  });"
+                                     L"  window.connection.on('reject', () => {"
+                                     L"    window.chrome.webview.postMessage({"
+                                     L"      type: 'call_event',"
+                                     L"      event: 'reject'"
+                                     L"    });"
+                                     L"  });"
+                                     L"  window.connection.on('cancel', () => {"
+                                     L"    window.chrome.webview.postMessage({"
+                                     L"      type: 'call_event',"
+                                     L"      event: 'cancel'"
+                                     L"    });"
+                                     L"  });"
+                                     L"  return '';"
+                                     L"} catch (error) {"
+                                     L"  window.chrome.webview.postMessage({"
+                                     L"    type: 'call_event',"
+                                     L"    event: 'error',"
+                                     L"    error: error.message"
+                                     L"  });"
+                                     L"  throw error;"
+                                     L"}"
+                                     L"})()";
 
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
@@ -642,7 +644,7 @@ namespace twilio_voice
           js_code,
           [shared_result](void *, std::string error)
           {
-            if (!error.empty())
+            if (error != "{}")
             {
               TV_LOG_ERROR("JavaScript error: " + error);
               (*shared_result)->Error("CALL_FAILED", error);
@@ -686,7 +688,7 @@ namespace twilio_voice
           mute_script,
           [shared_result](void *, std::string error)
           {
-            if (!error.empty())
+            if (error != "null")
             {
               (*shared_result)->Error("Mute Failed", error);
             }
@@ -698,26 +700,29 @@ namespace twilio_voice
     }
     else if (method == "isMuted")
     {
-      if (!activeCall_)
-      {
-        result->Success(false);
-        return;
-      }
 
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
 
+      // Wrap the JavaScript execution in a try-catch block with detailed logging
+      std::wstring isMutedScript = L"(function() {"
+                                   L"    if (!window.connection) {"
+                                   L"      return null;"
+                                   L"    }"
+                                   L"    return window.connection.isMuted();"
+                                   L"})()";
+
       webview_->evaluateJavaScript(
-          L"window.connection.isMuted()",
-          [shared_result](void *, std::string error)
+          isMutedScript,
+          [shared_result](void *, std::string response)
           {
-            if (!error.empty())
+            if (response == "null")
             {
-              (*shared_result)->Error("Failed to get mute state", error);
+              (*shared_result)->Success(nullptr);
             }
             else
             {
-              (*shared_result)->Success(true);
+              (*shared_result)->Success(response == "true");
             }
           });
     }
@@ -907,15 +912,16 @@ namespace twilio_voice
       std::wstring is_holding_script = L"window.connection.isHolding()";
       webview_->evaluateJavaScript(
           is_holding_script,
-          [shared_result](void *, std::string error)
+          [shared_result](void *, std::string response)
           {
-            if (!error.empty())
+            if (!response.empty())
             {
-              (*shared_result)->Error("Failed to get hold state", error);
+              bool isHolding = (response == "true");
+              (*shared_result)->Success(isHolding);
             }
             else
             {
-              (*shared_result)->Success(true);
+              (*shared_result)->Error("Failed to get hold state", "Empty response from JavaScript");
             }
           });
     }
@@ -1083,7 +1089,7 @@ namespace twilio_voice
             // Always reset the activeCall_ pointer
             activeCall_.reset();
 
-            if (!error.empty())
+            if (error != "\"\"")
             {
               TV_LOG_ERROR("Hangup error: " + error);
               (*shared_result)->Error("HANGUP_FAILED", "Failed to hang up call: " + error);
