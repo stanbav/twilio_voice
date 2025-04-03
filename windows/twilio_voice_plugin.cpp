@@ -263,7 +263,7 @@ namespace twilio_voice
         L"        event: 'ready'"
         L"      });"
         L"    });"
-        L"    "
+        L"    "       
         L"    return true;"
         L"  } catch (error) {"
         L"    window.chrome.webview.postMessage({"
@@ -678,16 +678,10 @@ namespace twilio_voice
 
       bool muted = std::get<bool>(muted_it->second);
 
-      if (!activeCall_)
-      {
-        result->Error("No Active Call", "Cannot mute without an active call");
-        return;
-      }
-
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
 
-      std::wstring mute_script = std::wstring(L"Twilio.Device.activeConnection().mute(") + (muted ? L"true" : L"false") + L")";
+      std::wstring mute_script = std::wstring(L"window.connection.mute(") + (muted ? L"true" : L"false") + L")";
       webview_->evaluateJavaScript(
           mute_script,
           [shared_result](void *, std::string error)
@@ -714,7 +708,7 @@ namespace twilio_voice
           std::move(result));
 
       webview_->evaluateJavaScript(
-          L"Twilio.Device.activeConnection().muted()",
+          L"window.connection.isMuted()",
           [shared_result](void *, std::string error)
           {
             if (!error.empty())
@@ -785,7 +779,7 @@ namespace twilio_voice
           std::move(result));
 
       webview_->evaluateJavaScript(
-          L"Twilio.Device.activeConnection().parameters.CallSid",
+          L"window.connection.parameters.CallSid",
           [shared_result](void *, std::string error)
           {
             if (!error.empty())
@@ -836,7 +830,7 @@ namespace twilio_voice
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
 
-      std::wstring digits_script = std::wstring(L"Twilio.Device.activeConnection().sendDigits('") + wdigits + L"')";
+      std::wstring digits_script = std::wstring(L"window.connection.sendDigits('") + wdigits + L"')";
       webview_->evaluateJavaScript(
           digits_script,
           [shared_result](void *, std::string error)
@@ -884,7 +878,7 @@ namespace twilio_voice
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
 
-      std::wstring hold_script = std::wstring(L"Twilio.Device.activeConnection().hold(") + (shouldHold ? L"true" : L"false") + L")";
+      std::wstring hold_script = std::wstring(L"window.connection.hold(") + (shouldHold ? L"true" : L"false") + L")";
       webview_->evaluateJavaScript(
           hold_script,
           [shared_result](void *, std::string error)
@@ -910,7 +904,7 @@ namespace twilio_voice
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
 
-      std::wstring is_holding_script = L"Twilio.Device.activeConnection().isHolding()";
+      std::wstring is_holding_script = L"window.connection.isHolding()";
       webview_->evaluateJavaScript(
           is_holding_script,
           [shared_result](void *, std::string error)
@@ -936,7 +930,7 @@ namespace twilio_voice
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
 
-      std::wstring accept_script = L"Twilio.Device.activeConnection().accept()";
+      std::wstring accept_script = L"window.connection.accept()";
       webview_->evaluateJavaScript(
           accept_script,
           [shared_result](void *, std::string error)
