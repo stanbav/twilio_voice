@@ -683,9 +683,8 @@ namespace twilio_voice
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
 
-      std::wstring mute_script = std::wstring(L"window.connection.mute(") + (muted ? L"true" : L"false") + L")";
       webview_->evaluateJavaScript(
-          mute_script,
+          std::wstring(L"window.connection.mute(") + (muted ? L"true" : L"false") + L")",
           [shared_result](void *, std::string error)
           {
             if (error != "null")
@@ -700,20 +699,11 @@ namespace twilio_voice
     }
     else if (method == "isMuted")
     {
-
       auto shared_result = std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
           std::move(result));
 
-      // Wrap the JavaScript execution in a try-catch block with detailed logging
-      std::wstring isMutedScript = L"(function() {"
-                                   L"    if (!window.connection) {"
-                                   L"      return null;"
-                                   L"    }"
-                                   L"    return window.connection.isMuted();"
-                                   L"})()";
-
       webview_->evaluateJavaScript(
-          isMutedScript,
+          L"window.connection.isMuted()",
           [shared_result](void *, std::string response)
           {
             if (response == "null")
@@ -722,6 +712,7 @@ namespace twilio_voice
             }
             else
             {
+              TV_LOG_DEBUG("isMuted response: " + response);
               (*shared_result)->Success(response == "true");
             }
           });
