@@ -61,11 +61,7 @@ void TVWebView::evaluateJavaScript(const std::wstring& javascript,
         std::string utf8Javascript(length, 0);
         WideCharToMultiByte(CP_UTF8, 0, javascript.c_str(), -1, &utf8Javascript[0], length, nullptr, nullptr);
         utf8Javascript.pop_back(); // Remove null terminator
-        TV_LOG_DEBUG("Executing JavaScript: " + utf8Javascript);
-    } else {
-        TV_LOG_DEBUG("Executing JavaScript: [conversion failed]");
-    }
-    
+    } 
     webview_->ExecuteScript(javascript.c_str(),
         Microsoft::WRL::Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
             [completionHandler](HRESULT error, LPCWSTR result) -> HRESULT {
@@ -89,7 +85,6 @@ void TVWebView::evaluateJavaScript(const std::wstring& javascript,
                         strcpy_s(resultBuffer, utf8Result.length() + 1, utf8Result.c_str());
                         completionHandler(nullptr, resultBuffer);
                 } else {
-                    TV_LOG_DEBUG("Failed to convert result to UTF-8");
                     completionHandler(nullptr, "Failed to convert result to UTF-8");
                 }
                 return S_OK;
