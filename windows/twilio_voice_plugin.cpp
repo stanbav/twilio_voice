@@ -685,7 +685,7 @@ namespace twilio_voice
 
       webview_->evaluateJavaScript(
           std::wstring(L"window.connection.mute(") + (muted ? L"true" : L"false") + L"); window.connection.isMuted()",
-          [shared_result](void *, std::string response)
+          [shared_result, this](void *, std::string response)
           {
             if (response == "null")
             {
@@ -694,7 +694,9 @@ namespace twilio_voice
             else
             {
               TV_LOG_DEBUG("isMuted response: " + response);
-              (*shared_result)->Success(response == "true");
+              bool isMuted = response == "true";
+              (*shared_result)->Success(isMuted);
+              SendEventToFlutter(isMuted ? "Mute" : "Unmute");
             }
           });
     }
